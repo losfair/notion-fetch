@@ -1,10 +1,9 @@
-name = "dlock"
+name = "notion-fetch"
 type = "javascript"
 zone_id = ""
 account_id = ""
-workers_dev = false
-compatibility_date = "2022-06-18"
-compatibility_flags = ["durable_object_alarms"]
+workers_dev = true
+compatibility_date = "2022-07-21"
 
 [build]
 command = "npm install && npm run build"
@@ -13,14 +12,22 @@ format = "modules"
 main = "./worker.mjs"
 
 [durable_objects]
-bindings = [{name = "LEASE", class_name = "Lease"}]
+bindings = [{name = "NOTION_PAGE", class_name = "NotionPage"}]
 
 [[migrations]]
 tag = "v1" # Should be unique for each entry
-new_classes = ["Lease"]
+new_classes = ["NotionPage"]
+
+[[r2_buckets]]
+binding = "DATA_BUCKET" # <~ valid JavaScript variable name
+bucket_name = "notion-fetch"
 
 [env.staging]
-name = "dlock-staging"
+name = "notion-fetch-staging"
 
 [env.staging.durable_objects]
-bindings = [{name = "LEASE", class_name = "Lease"}]
+bindings = [{name = "NOTION_PAGE", class_name = "NotionPage"}]
+
+[[env.staging.r2_buckets]]
+binding = "DATA_BUCKET" # <~ valid JavaScript variable name
+bucket_name = "notion-fetch-staging"

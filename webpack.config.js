@@ -1,5 +1,6 @@
 
 const path = require('path')
+const webpack = require("webpack");
 
 module.exports = {
   entry: './src/index.ts',
@@ -13,7 +14,9 @@ module.exports = {
   devtool: 'cheap-module-source-map',
   mode: 'production',
   resolve: {
-    extensions: ['.ts', '.tsx', '.js']
+    extensions: ['.ts', '.tsx', '.js'],
+    fallback: {
+    },
   },
   module: {
     rules: [
@@ -33,4 +36,9 @@ module.exports = {
   optimization: {
     minimize: false,
   },
+  plugins: [
+    new webpack.DefinePlugin({
+      window: "globalThis",
+    }),
+  ],
 }
