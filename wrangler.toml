@@ -2,7 +2,7 @@ name = "notion-fetch"
 type = "javascript"
 zone_id = ""
 account_id = ""
-workers_dev = true
+workers_dev = false
 compatibility_date = "2022-07-21"
 
 [build]
@@ -24,6 +24,7 @@ bucket_name = "notion-fetch"
 
 [env.staging]
 name = "notion-fetch-staging"
+workers_dev = true
 
 [env.staging.durable_objects]
 bindings = [{name = "NOTION_PAGE", class_name = "NotionPage"}]
