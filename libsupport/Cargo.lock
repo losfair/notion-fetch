@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "html2md"
 version = "0.2.10"
-source = "git+https://github.com/losfair/html2md?rev=d162418a1d50032885064a8e11c7a6b37c8dd50b#d162418a1d50032885064a8e11c7a6b37c8dd50b"
+source = "git+https://github.com/losfair/html2md?rev=f3675bb5705ad2538ad772dc5f3dbff0fabc4cfa#f3675bb5705ad2538ad772dc5f3dbff0fabc4cfa"
 dependencies = [
  "html5ever",
  "jni",
