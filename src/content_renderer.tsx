@@ -73,8 +73,11 @@ function ListEntryRenderer({ content, entry }: {
     children: string[],
   }
 }) {
+  const firstChild = content.block[entry.children[0]].value;
+  const listStartIndex = firstChild.format?.list_start_index;
   return React.createElement(entry.tag, {
-    children: entry.children.map((x, i) => <BlockRenderer key={"child-" + i} content={content} block={content.block[x].value} />)
+    children: entry.children.map((x, i) => <BlockRenderer key={"child-" + i} content={content} block={content.block[x].value} />),
+    ...(listStartIndex !== undefined ? { start: "" + listStartIndex } : {})
   });
 }
 
