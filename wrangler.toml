@@ -1,15 +1,10 @@
 name = "notion-fetch"
-type = "javascript"
-zone_id = ""
-account_id = ""
 workers_dev = false
 compatibility_date = "2022-07-21"
+main = "dist/worker.mjs"
 
 [build]
 command = "npm install && npm run build"
-[build.upload]
-format = "modules"
-main = "./worker.mjs"
 
 [durable_objects]
 bindings = [{name = "NOTION_PAGE", class_name = "NotionPage"}]
@@ -22,6 +17,9 @@ new_classes = ["NotionPage"]
 binding = "DATA_BUCKET" # <~ valid JavaScript variable name
 bucket_name = "notion-fetch"
 
+[vars]
+PRIMARY_ORIGIN = "https://notion-fetch.univalent.net"
+
 [env.staging]
 name = "notion-fetch-staging"
 workers_dev = true
@@ -32,3 +30,6 @@ bindings = [{name = "NOTION_PAGE", class_name = "NotionPage"}]
 [[env.staging.r2_buckets]]
 binding = "DATA_BUCKET" # <~ valid JavaScript variable name
 bucket_name = "notion-fetch-staging"
+
+[env.staging.vars]
+PRIMARY_ORIGIN = "https://notion-fetch-staging.bits.workers.dev"

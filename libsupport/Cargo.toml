@@ -1,0 +1,21 @@
+[package]
+name = "libsupport"
+version = "0.1.0"
+authors = ["losfair <zhy20000919@hotmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = "thin"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+html2md = { git = "https://github.com/losfair/html2md", rev = "d162418a1d50032885064a8e11c7a6b37c8dd50b" }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.8"
+serde_json = "1"
+minify-html = "0.4"

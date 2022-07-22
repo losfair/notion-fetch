@@ -4,53 +4,115 @@ import * as ReactDOMServer from 'react-dom/server';
 import { ContentRenderer } from "./content_renderer";
 import React from "react";
 import * as blake from "blakejs";
+import { html2md } from "./libsupport";
 
 interface AppEnv {
   NOTION_PAGE: DurableObjectNamespace,
   DATA_BUCKET: R2Bucket,
+  PRIMARY_ORIGIN?: string,
 }
 
 interface PageData {
   id: string,
   r2Path: string,
+  title: string | undefined,
 }
 
 const mdRegex = /^\/([0-9a-z-]{1,100})\.md$/
+const htmlRegex = /^\/([0-9a-z-]{1,100})\.html$/
 const imageRegex = /^\/image\/([0-9a-z-]{1,100})\/([0-9a-z.-]{1,200})$/;
 
+interface FetchedPage {
+  data: PageData,
+  html: R2ObjectBody,
+}
+
+async function fetchPage(pageId: string, env: AppEnv, originalUrl: URL): Promise<FetchedPage | Response> {
+  const objId = env.NOTION_PAGE.idFromName(pageId);
+  const obj = env.NOTION_PAGE.get(objId);
+
+  const outUrl = new URL(`https://[100::]/page/${pageId}`);
+  if (originalUrl.searchParams.get("refresh") === "1") {
+    outUrl.searchParams.set("refresh", "1");
+  }
+
+  const objFetch = await obj.fetch(outUrl.toString());
+  if (objFetch.status !== 200) return objFetch;
+  const data = await objFetch.json<PageData>();
+  const html = await env.DATA_BUCKET.get(data.r2Path);
+  if (!html) return new Response("missing html", { status: 404 });
+  return {
+    data,
+    html,
+  }
+}
+
 export default {
-  async fetch(request: Request, env: AppEnv): Promise<Response> {
+  async fetch(request: Request, env: AppEnv, context: ExecutionContext): Promise<Response> {
+    await ensureWasmInit();
     const url = new URL(request.url);
 
     let match: RegExpExecArray | null = null;
-    if ((match = mdRegex.exec(url.pathname)) !== null) {
+    if ((match = htmlRegex.exec(url.pathname)) !== null) {
       const pageId = match[1];
-      const objId = env.NOTION_PAGE.idFromName(pageId);
-      const obj = env.NOTION_PAGE.get(objId);
+      const page = await fetchPage(pageId, env, url);
+      if (page instanceof Response) return page;
 
-      const outUrl = new URL(`https://[100::]/page/${pageId}`);
-      if (url.searchParams.get("refresh") === "1") {
-        outUrl.searchParams.set("refresh", "1");
-      }
+      const headers = new Headers();
+      headers.set("content-type", "text/html; charset=utf-8");
+      headers.set("access-control-allow-origin", "*");
 
-      const objFetch = await obj.fetch(outUrl.toString());
-      if (objFetch.status !== 200) return objFetch;
-      const page = await objFetch.json<PageData>();
-      const html = await env.DATA_BUCKET.get(page.r2Path);
-      return new Response(html ? html.body : null, {
-        status: html ? 200 : 404,
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-        }
+      return new Response(page.html.body, {
+        status: 200,
+        headers,
+      })
+    } else if ((match = mdRegex.exec(url.pathname)) !== null) {
+      const pageId = match[1];
+      const page = await fetchPage(pageId, env, url);
+      if (page instanceof Response) return page;
+
+      const md = (page.data.title ? `# ${page.data.title}\n\n` : "") + html2md(await page.html.text());
+
+      const headers = new Headers();
+      headers.set("content-type", "text/plain; charset=utf-8");
+      headers.set("access-control-allow-origin", "*");
+
+      return new Response(md, {
+        status: 200,
+        headers,
       })
     } else if ((match = imageRegex.exec(url.pathname)) !== null) {
+      const cacheKey = url.origin + url.pathname;
+      const cacheMatch = await caches.default.match(cacheKey);
+      if (cacheMatch) return cacheMatch;
+
       const pageId = match[1];
       const filename = match[2];
       const objId = env.NOTION_PAGE.idFromName(pageId);
       const obj = env.NOTION_PAGE.get(objId);
-      return obj.fetch(`https://[100::]/image/${pageId}/${filename}`, {
-        headers: request.headers,
-      });
+
+      for (let i = 0; i < 3; i++) {
+        const object = await env.DATA_BUCKET.get(`image/${pageId}/${filename}`)
+        if (object !== null) {
+          const headers = new Headers()
+          object.writeHttpMetadata(headers)
+          headers.set("cache-control", "public, max-age=2592000");
+          const response = new Response(object.body, {
+            headers,
+          });
+          context.waitUntil(caches.default.put(cacheKey, response.clone()));
+          return response;
+        }
+
+        const objFetch = await obj.fetch(`https://[100::]/image/${pageId}/${filename}`);
+        if (!objFetch.ok) {
+          return objFetch;
+        }
+        await objFetch.text();
+        await new Promise(resolve => setTimeout(() => resolve(undefined), 1000 * (i + 1)));
+      }
+
+      return new Response("image load timeout", { status: 500 });
     } else {
       return mkJsonResponse({ error: "routing failed" }, 404);
     }
@@ -153,7 +215,7 @@ export class NotionPage {
       if (!imageQueue.has(filename)) {
         imageQueue.set(filename, src);
       }
-      return ` src="/image/${pageId}/${filename}"`
+      return ` src="${this.env.PRIMARY_ORIGIN || ""}/image/${pageId}/${filename}"`
     })
 
     const r2ObjectId = blake.blake2bHex(newHtml, undefined, 32)
@@ -163,6 +225,7 @@ export class NotionPage {
     const page: PageData = {
       id: pageId,
       r2Path,
+      title: extractPageTitle(recordMap),
     };
     if (imageQueue.size) {
       this.state.storage.put("imageQueue", imageQueue);
@@ -195,28 +258,10 @@ export class NotionPage {
     } else if ((match = this.imageRegex.exec(url.pathname)) !== null) {
       const pageId = match[1];
       const filename = match[2];
-      for (let i = 0; i < 3; i++) {
-        const q = await this.state.storage.get<Map<string, string>>("imageQueue");
-        const entry = q ? q.get(filename) : undefined;
-        if (entry === undefined) return new Response("image not found", { status: 404 });
-
-        if (entry !== "") {
-          await new Promise(resolve => setTimeout(() => resolve(undefined), 1000));
-        } else {
-          const object = await this.env.DATA_BUCKET.get(`image/${pageId}/${filename}`)
-          if (object === null) {
-            return new Response("image not found in r2", { status: 404 });
-          }
-
-          const headers = new Headers()
-          object.writeHttpMetadata(headers)
-          headers.set("cache-control", "public, max-age=2592000");
-          return new Response(object.body, {
-            headers,
-          })
-        }
-      }
-      return new Response("image load timeout", { status: 500 });
+      const q = await this.state.storage.get<Map<string, string>>("imageQueue");
+      const entry = q ? q.get(filename) : undefined;
+      if (entry === undefined) return new Response("image not found", { status: 404 });
+      return new Response(null, { status: 200 });
     } else {
       return mkJsonResponse({ error: "dobj routing failed" }, 404);
     }
@@ -231,4 +276,15 @@ function mkJsonResponse(x: unknown, status: number = 200, headers: Record<string
       ...headers,
     }
   });
+}
+
+function extractPageTitle(recordMap: ExtendedRecordMap): string | undefined {
+  for (const block of Object.values(recordMap.block)) {
+    const v = block.value;
+    if (v.type === "page") {
+      const title = v.properties?.title || [];
+      return title.map(x => x[0]).join("");
+    }
+  }
+  return undefined;
 }
