@@ -15,19 +15,21 @@ interface AppEnv {
 interface PageData {
   id: string,
   r2Path: string,
-  title: string | undefined,
+  r2JsonPath?: string,
+  title?: string,
 }
 
 const mdRegex = /^\/([0-9a-z-]{1,100})\.md$/
 const htmlRegex = /^\/([0-9a-z-]{1,100})\.html$/
+const jsonRegex = /^\/([0-9a-z-]{1,100})\.json$/
 const imageRegex = /^\/image\/([0-9a-z-]{1,100})\/([0-9a-z.-]{1,200})$/;
 
 interface FetchedPage {
   data: PageData,
-  html: R2ObjectBody,
+  body: R2ObjectBody,
 }
 
-async function fetchPage(pageId: string, env: AppEnv, originalUrl: URL): Promise<FetchedPage | Response> {
+async function fetchPage(pageId: string, env: AppEnv, originalUrl: URL, opts: { json?: boolean } = {}): Promise<FetchedPage | Response> {
   const objId = env.NOTION_PAGE.idFromName(pageId);
   const obj = env.NOTION_PAGE.get(objId);
 
@@ -39,11 +41,13 @@ async function fetchPage(pageId: string, env: AppEnv, originalUrl: URL): Promise
   const objFetch = await obj.fetch(outUrl.toString());
   if (objFetch.status !== 200) return objFetch;
   const data = await objFetch.json<PageData>();
-  const html = await env.DATA_BUCKET.get(data.r2Path);
-  if (!html) return new Response("missing html", { status: 404 });
+  const path = opts.json ? data.r2JsonPath : data.r2Path;
+  if (!path) return new Response("missing resource", { status: 404 });
+  const body = await env.DATA_BUCKET.get(path);
+  if (!body) return new Response("missing data in bucket", { status: 404 });
   return {
     data,
-    html,
+    body,
   }
 }
 
@@ -62,7 +66,7 @@ export default {
       headers.set("content-type", "text/html; charset=utf-8");
       headers.set("access-control-allow-origin", "*");
 
-      return new Response(page.html.body, {
+      return new Response(page.body.body, {
         status: 200,
         headers,
       })
@@ -71,13 +75,26 @@ export default {
       const page = await fetchPage(pageId, env, url);
       if (page instanceof Response) return page;
 
-      const md = (page.data.title ? `# ${page.data.title}\n\n` : "") + html2md(await page.html.text());
+      const md = (page.data.title ? `# ${page.data.title}\n\n` : "") + html2md(await page.body.text());
 
       const headers = new Headers();
       headers.set("content-type", "text/plain; charset=utf-8");
       headers.set("access-control-allow-origin", "*");
 
       return new Response(md, {
+        status: 200,
+        headers,
+      })
+    } else if ((match = jsonRegex.exec(url.pathname)) !== null) {
+      const pageId = match[1];
+      const page = await fetchPage(pageId, env, url, { json: true });
+      if (page instanceof Response) return page;
+
+      const headers = new Headers();
+      headers.set("content-type", "application/json");
+      headers.set("access-control-allow-origin", "*");
+
+      return new Response(page.body.body, {
         status: 200,
         headers,
       })
@@ -181,7 +198,7 @@ export class NotionPage {
       rendered = ReactDOMServer.renderToString(React.createElement(ContentRenderer, { content: recordMap }));
     } catch (e) {
       console.log((e as any).stack);
-      throw e;
+      rendered = "";
     }
 
     const imageQueue = new Map<string, string>();
@@ -218,13 +235,15 @@ export class NotionPage {
       return ` src="${this.env.PRIMARY_ORIGIN || ""}/image/${pageId}/${filename}"`
     })
 
-    const r2ObjectId = blake.blake2bHex(newHtml, undefined, 32)
-    const r2Path = `page/${pageId}/${r2ObjectId}.html`;
+    const r2Path = `page/${pageId}.html`;
+    const r2JsonPath = `page/${pageId}.json`;
     await this.env.DATA_BUCKET.put(r2Path, newHtml);
+    await this.env.DATA_BUCKET.put(r2JsonPath, JSON.stringify(recordMap));
 
     const page: PageData = {
       id: pageId,
       r2Path,
+      r2JsonPath,
       title: extractPageTitle(recordMap),
     };
     if (imageQueue.size) {

@@ -1,4 +1,4 @@
-import { Block, Decoration, ExtendedRecordMap } from "notion-types";
+import { Block, Decoration, ExtendedRecordMap, SubDecoration } from "notion-types";
 import React from "react";
 import { defaultMapImageUrl } from "react-notion-x";
 
@@ -22,18 +22,41 @@ function BlockRenderer({ content, block }: { content: ExtendedRecordMap, block: 
       src={defaultMapImageUrl(block.properties.source[0][0], block) || block.properties.source[0][0]}
       alt={block.properties.caption?.map(x => x[0]).join("") || undefined}
       width={block.format?.block_width}
-      height={block.format ? block.format.block_width * block.format.block_aspect_ratio : undefined} />
+      height={(block.format && block.format.block_width && block.format.block_aspect_ratio) ? Math.floor(block.format.block_width * block.format.block_aspect_ratio) : undefined} />
+    case "quote": return <blockquote>{genTitle(block.properties?.title)}</blockquote>
+    case "divider": return <hr />
+    case "toggle": return <details>
+      <summary>{genTitle(block.properties?.title)}</summary>
+      {genChildren(content, block.content)}
+    </details>
     default: return <pre>{JSON.stringify(block)}</pre>;
   }
 }
 
 function genTitle(title: Decoration[] | undefined): React.ReactNode[] {
-  return (title || []).map(([text, props], i) => props ? React.createElement(transformTagName(props[0][0]), { key: "title-" + i, children: text }) : <span key={"title-" + i}>{text}</span>);
+  return (title || []).map(([text, props], i) => {
+    if (!props || !props.length) return <span key={"title-" + i}>{text}</span>;
+    let current: React.ReactNode = text;
+    for (let i = 0; i < props.length; i++) {
+      const [tag, htmlProps] = transformTag(props[i]);
+      const targetProps: Record<string, unknown> = { children: current, ...htmlProps };
+      if (i + 1 === props.length) {
+        targetProps.key = "title-" + i;
+      }
+      current = React.createElement(tag, targetProps);
+    }
+    return current;
+  })
 }
 
-function transformTagName(tagName: string): string {
-  if (tagName == "c") return "code";
-  return tagName;
+function transformTag([tagName, ...tagProps]: SubDecoration): [string, Record<string, unknown>] {
+  switch (tagName) {
+    case "c": return ["code", {}]
+    case "_": return ["u", {}]
+    case "h": return ["span", { "className": "notion-" + tagProps[0] }]
+    case "a": return ["a", { "href": tagProps[0] }]
+    default: return [tagName, {}]
+  }
 }
 
 function genChildren(content: ExtendedRecordMap, children: string[] | undefined) {
