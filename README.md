@@ -4,10 +4,23 @@ A Cloudflare Workers service that fetches and renders Notion pages as HTML, Mark
 
 ## Usage
 
+*Please don't point production services at my domain - deploy your own Worker instead!*
+
 ```
 https://notion-fetch.univalent.net/[page-id].md
 https://notion-fetch.univalent.net/[page-id].html
 https://notion-fetch.univalent.net/[page-id].json
+```
+
+## Deploy
+
+Deployment requires [Wrangler 2](https://github.com/cloudflare/wrangler2).
+
+1. Create an R2 bucket named `notion-fetch`.
+2. Publish the worker:
+
+```
+npx wrangler publish
 ```
 
 ## Example
