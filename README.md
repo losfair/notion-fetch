@@ -28,7 +28,7 @@ npx wrangler publish
 This example is from [react-notion-x's demo](https://react-notion-x-demo.transitivebullsh.it/0be6efce9daf42688f65c76b89f8eb27):
 
 [Markdown](https://notion-fetch.univalent.net/0be6efce9daf42688f65c76b89f8eb27.md)
-[HTML](https://notion-fetch.univalent.net/0be6efce9daf42688f65c76b89f8eb27.html)
+/ [HTML](https://notion-fetch.univalent.net/0be6efce9daf42688f65c76b89f8eb27.html)
 
 ## Image URL rewriting
 
